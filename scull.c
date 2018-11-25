@@ -40,6 +40,7 @@ MODULE_LICENSE("Dual BSD/GPL");
 struct message{
 	char* text;
 	struct message* next;
+	struct message* prev;
 };
 
 
@@ -108,7 +109,53 @@ ssize_t scull_read(struct file *filp, char __user *buf, size_t count,
     int quantum = dev->quantum;
     int s_pos, q_pos;
     ssize_t retval = 0;
-
+    
+	struct message *tmpMsg= dev->msg;
+	
+	int wordLength = 0;
+	
+	
+	while(tmpMsg){
+		
+		wordLength += (strlen(tmpMsg->text));
+		if(tmpMsg == dev->tail){
+			//printk("Tail = %s\n",tmpMsg->text);
+			break;
+		}
+		//printk("Element = %s\n",tmpMsg->text);
+		tmpMsg = tmpMsg->next;	
+	}
+	
+	char* temp = (char*) kmalloc((wordLength)*sizeof(char), GFP_KERNEL);
+//	printk("Final: %s\n", temp);
+	tmpMsg = dev->msg;
+	wordLength  = 0;
+	while(tmpMsg){
+		int len= (strlen(tmpMsg->text));
+		wordLength += len;
+		if(tmpMsg == dev->msg){
+			strcpy(temp,tmpMsg->text);
+		}
+		else{					
+			/*if(tmpMsg == dev->tail){
+				strcat(temp,tmpMsg->text);
+				break;
+			}*/
+			strcat(temp,tmpMsg->text);
+		}
+		tmpMsg = tmpMsg->next;	
+		printk("%s - \n", temp);
+	}
+	
+	
+	if (copy_to_user(buf, temp, wordLength)) {
+        retval = -EFAULT;
+        goto out;
+    }
+	
+	
+	
+	
     if (down_interruptible(&dev->sem))
         return -ERESTARTSYS;
     if (*f_pos >= dev->size)
@@ -126,12 +173,12 @@ ssize_t scull_read(struct file *filp, char __user *buf, size_t count,
     if (count > quantum - q_pos)
         count = quantum - q_pos;
 
-    if (copy_to_user(buf, dev->data[s_pos] + q_pos, count)) {
+    /*if (copy_to_user(buf, dev->data[s_pos] + q_pos, count)) {
         retval = -EFAULT;
         goto out;
-    }
+    }*/
     *f_pos += count;
-    retval = count;
+    retval = wordLength;// count idi degistir
 
   out:
     up(&dev->sem);
@@ -148,22 +195,21 @@ ssize_t scull_write(struct file *filp, const char __user *buf, size_t count,
     char* temp = kmalloc(count*sizeof(char), GFP_KERNEL);
 	copy_from_user(temp,buf,count);
 	temp[count-1] = '\0';
-	printk("The string falan: %s\n", buf);
-	printk("Temp version: %s\n", temp);
 	struct message *tmpMsg= kmalloc(count*2*sizeof(char), GFP_KERNEL);
+	tmpMsg->text = temp;
+	tmpMsg->next = NULL;
+	tmpMsg->prev = NULL;
     if(!dev->msg){
 		dev->msg = tmpMsg;
 		dev->tail = tmpMsg;
-		dev->msg->text = temp;
-		dev->msg->next = NULL;
 	}
 	else{
-		struct message *tmpNode= kmalloc(count*2*sizeof(char), GFP_KERNEL);
-		tmpNode->text = temp;
-		tmpNode->next = dev->msg;
-		dev->msg = tmpNode;
+		tmpMsg->next = dev->msg;
+		dev->msg->prev = tmpMsg;
+		dev->msg = tmpMsg;
 	}
     printk("inside struct: %s\n", dev->msg->text);
+    
     quantum = dev->quantum;
     qset = dev->qset;
     int s_pos, q_pos;
@@ -374,7 +420,7 @@ void scull_cleanup_module(void)
 				struct message* temp = dev->msg;
 				char*tempmsg = dev->msg->text;
 				dev->msg = dev->msg->next;
-				printk("Siliyorum aq %s\n",tempmsg);
+				printk("Silinen: %s\n", tempmsg);
 				kfree(temp);
 				kfree(tempmsg);
 			}
