@@ -126,7 +126,7 @@ ssize_t scull_read(struct file *filp, char __user *buf, size_t count,
 		tmpMsg = tmpMsg->next;	
 	}
 	
-	char* temp = (char*) kmalloc((wordLength)*sizeof(char), GFP_KERNEL);
+	char* temp = (char*) kmalloc((wordLength+2)*sizeof(char), GFP_KERNEL);
 //	printk("Final: %s\n", temp);
 	tmpMsg = dev->msg;
 	wordLength  = 0;
@@ -144,20 +144,23 @@ ssize_t scull_read(struct file *filp, char __user *buf, size_t count,
 			strcat(temp,tmpMsg->text);
 		}
 		tmpMsg = tmpMsg->next;	
-		printk("%s - \n", temp);
+		
 	}
-	
-	
-	if (copy_to_user(buf, temp, wordLength)) {
-        retval = -EFAULT;
-        goto out;
-    }
-	
+	temp[wordLength] = '\n';
+	temp[wordLength+1] = '\0';
+	printk("%d - %s \n", wordLength, temp);
 	
 	
 	
     if (down_interruptible(&dev->sem))
         return -ERESTARTSYS;
+    if (copy_to_user(buf, temp, wordLength)) {
+        retval = -EFAULT;
+        goto out;
+    }
+	
+	
+	kfree(temp);
     if (*f_pos >= dev->size)
         goto out;
     if (*f_pos + count > dev->size)
@@ -178,7 +181,7 @@ ssize_t scull_read(struct file *filp, char __user *buf, size_t count,
         goto out;
     }*/
     *f_pos += count;
-    retval = wordLength;// count idi degistir
+    retval = wordLength+2;// count idi degistir
 
   out:
     up(&dev->sem);
