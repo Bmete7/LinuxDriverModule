@@ -111,6 +111,7 @@ ssize_t scull_read(struct file *filp, char __user *buf, size_t count,
     ssize_t retval = 0;
     
 	struct message *tmpMsg= dev->msg;
+	//memset(tmpMsg, 0, sizeof(struct message));
 	
 	int wordLength = 0;
 	
@@ -118,16 +119,13 @@ ssize_t scull_read(struct file *filp, char __user *buf, size_t count,
 	while(tmpMsg){
 		
 		wordLength += (strlen(tmpMsg->text));
-		if(tmpMsg == dev->tail){
-			//printk("Tail = %s\n",tmpMsg->text);
-			break;
-		}
 		//printk("Element = %s\n",tmpMsg->text);
 		tmpMsg = tmpMsg->next;	
 	}
 	
-	char* temp = (char*) kmalloc((wordLength+2)*sizeof(char), GFP_KERNEL);
-//	printk("Final: %s\n", temp);
+	char* temp = (char*) kmalloc((wordLength)*sizeof(char), GFP_KERNEL);
+	
+
 	tmpMsg = dev->msg;
 	wordLength  = 0;
 	while(tmpMsg){
@@ -144,11 +142,10 @@ ssize_t scull_read(struct file *filp, char __user *buf, size_t count,
 			strcat(temp,tmpMsg->text);
 		}
 		tmpMsg = tmpMsg->next;	
-		
+		printk("Final: %s\n", temp);
 	}
-	temp[wordLength] = '\n';
-	temp[wordLength+1] = '\0';
-	printk("%d - %s \n", wordLength, temp);
+//	strcat(temp,"\n\0");
+	printk("%d - %s ", wordLength, temp);
 	
 	
 	
@@ -161,6 +158,7 @@ ssize_t scull_read(struct file *filp, char __user *buf, size_t count,
 	
 	
 	kfree(temp);
+
     if (*f_pos >= dev->size)
         goto out;
     if (*f_pos + count > dev->size)
@@ -181,7 +179,7 @@ ssize_t scull_read(struct file *filp, char __user *buf, size_t count,
         goto out;
     }*/
     *f_pos += count;
-    retval = wordLength+2;// count idi degistir
+    retval = wordLength;// count idi degistir
 
   out:
     up(&dev->sem);
@@ -195,10 +193,13 @@ ssize_t scull_write(struct file *filp, const char __user *buf, size_t count,
 	
 	int quantum,qset;
     struct scull_dev *dev = filp->private_data;
+    
     char* temp = kmalloc(count*sizeof(char), GFP_KERNEL);
+    memset(temp, 0, count*sizeof(char));
 	copy_from_user(temp,buf,count);
 	temp[count-1] = '\0';
-	struct message *tmpMsg= kmalloc(count*2*sizeof(char), GFP_KERNEL);
+	struct message *tmpMsg= kmalloc(sizeof(struct message), GFP_KERNEL);
+	memset(tmpMsg, 0, sizeof(struct message));
 	tmpMsg->text = temp;
 	tmpMsg->next = NULL;
 	tmpMsg->prev = NULL;
@@ -207,9 +208,9 @@ ssize_t scull_write(struct file *filp, const char __user *buf, size_t count,
 		dev->tail = tmpMsg;
 	}
 	else{
-		tmpMsg->next = dev->msg;
-		dev->msg->prev = tmpMsg;
-		dev->msg = tmpMsg;
+		tmpMsg->prev = dev->tail;
+		dev->tail->next = tmpMsg;
+		dev->tail = tmpMsg;
 	}
     printk("inside struct: %s\n", dev->msg->text);
     
@@ -424,8 +425,10 @@ void scull_cleanup_module(void)
 				char*tempmsg = dev->msg->text;
 				dev->msg = dev->msg->next;
 				printk("Silinen: %s\n", tempmsg);
-				kfree(temp);
+				temp->next= NULL;
+				temp->prev = NULL;
 				kfree(tempmsg);
+				kfree(temp);
 			}
             cdev_del(&scull_devices[i].cdev);
         }
