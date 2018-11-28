@@ -304,12 +304,15 @@ long scull_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 					}
 					struct message *tmpMsg= (scull_devices+1+i)->head;
 					(scull_devices+1+i)->head = (scull_devices+1+i)->head->next;
-					(scull_devices+1+i)->head->prev =NULL;
+					if((scull_devices+1+i)->head)
+						(scull_devices+1+i)->head->prev =NULL;
 					tmpMsg->next = NULL;
-					//retval = tmpMsg->text;
-					printk("%s\n", tmpMsg->text);
+					//tmpMsg = NULL;
 					kfree(tmpMsg->text);
 					kfree(tmpMsg);
+					//retval = tmpMsg->text;
+					printk("%s\n", tmpMsg->text);
+					
 					break;
 				}
 			}
