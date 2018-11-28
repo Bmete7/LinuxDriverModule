@@ -5,7 +5,7 @@
 
 #define QUEUE_IOC_MAGIC  'k'
 // maxnr 0 a cek, yeni bir iocqueuepop define et, IOR
-#define QUEUE_IOCQPOP     _IOR(QUEUE_IOC_MAGIC, 0,int)
+#define QUEUE_IOCQPOP     _IOR(QUEUE_IOC_MAGIC, 0,char*)
 
 #define QUEUE_IOC_MAXNR 0
 

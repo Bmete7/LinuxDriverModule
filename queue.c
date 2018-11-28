@@ -289,38 +289,56 @@ long queue_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	else if (_IOC_DIR(cmd) & _IOC_WRITE)
 		err =  !access_ok(VERIFY_READ, (void __user *)arg, _IOC_SIZE(cmd));
 	if (err) return -EFAULT;
-
+	struct queue_dev *dev = filp->private_data;
+	int len = 0;
 	switch(cmd) {
 	  case QUEUE_IOCQPOP:
 		
-		
-		for (i = 0 ; i < 3 ; ++i){
-			if(queue_devices+1+1){
-				if((queue_devices+1+i)->head){
-
-					struct queue_dev *dev = filp->private_data;
-					if(dev != queue_devices){ // only queue0 can have access to pop command 
-						return -EACCES;
+		if(dev != queue_devices){ // if its not the queue gets the ioctl command
+			if(dev){
+				if(dev->head){
+					struct message *tmpMsg= dev->head;
+					len = strlen(dev->head->text);
+					if (copy_to_user((char *)arg, dev->head->text, len)) {
+						retval = -EFAULT;
 					}
-					struct message *tmpMsg= (queue_devices+1+i)->head;
-					(queue_devices+1+i)->head = (queue_devices+1+i)->head->next;
-					if((queue_devices+1+i)->head)
-						(queue_devices+1+i)->head->prev =NULL;
+					dev->head = dev->head->next;
+					if(dev->head)
+						dev->head->prev =NULL;
 					tmpMsg->next = NULL;
-					//tmpMsg = NULL;
+					
 					kfree(tmpMsg->text);
 					kfree(tmpMsg);
-					//retval = tmpMsg->text;
-					printk("%s\n", tmpMsg->text);
-					
-					break;
 				}
 			}
-			
-			
+			else{
+				return -ENOENT; // if device is not found, no such file exists
+			}
 		}
-	  
-	  
+		else{
+			for (i = 0 ; i < 3 ; ++i){
+				if(queue_devices+1+1){
+					if((queue_devices+1+i)->head){
+
+						
+						if(dev != queue_devices){ // 
+							return -EACCES;
+						}
+						struct message *tmpMsg= (queue_devices+1+i)->head;
+						(queue_devices+1+i)->head = (queue_devices+1+i)->head->next;
+						if((queue_devices+1+i)->head)
+							(queue_devices+1+i)->head->prev =NULL;
+						tmpMsg->next = NULL;
+						//tmpMsg = NULL;
+						kfree(tmpMsg->text);
+						kfree(tmpMsg);
+						//retval = tmpMsg->text;
+						printk("%s\n", tmpMsg->text);
+						break;
+					}
+				}
+			}
+		}
 		break;
 
 	  default:  /* redundant, as cmd was checked against MAXNR */
