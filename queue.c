@@ -15,24 +15,24 @@
 #include <asm/switch_to.h>		/* cli(), *_flags */
 #include <asm/uaccess.h>	/* copy_*_user */
 
-#include "scull_ioctl.h"
+#include "queue_ioctl.h"
 
-#define SCULL_MAJOR 0
-#define SCULL_NR_DEVS 4
-#define SCULL_QUANTUM 4000
-#define SCULL_QSET 1000
+#define QUEUE_MAJOR 0
+#define QUEUE_NR_DEVS 4
+#define QUEUE_QUANTUM 4000
+#define QUEUE_QSET 1000
 
-int scull_major = SCULL_MAJOR;
-int scull_minor = 0;
-int scull_nr_devs = SCULL_NR_DEVS;
-int scull_quantum = SCULL_QUANTUM;
-int scull_qset = SCULL_QSET;
+int queue_major = QUEUE_MAJOR;
+int queue_minor = 0;
+int queue_nr_devs = QUEUE_NR_DEVS;
+int queue_quantum = QUEUE_QUANTUM;
+int queue_qset = QUEUE_QSET;
 
-module_param(scull_major, int, S_IRUGO);
-module_param(scull_minor, int, S_IRUGO);
-module_param(scull_nr_devs, int, S_IRUGO);
-module_param(scull_quantum, int, S_IRUGO);
-module_param(scull_qset, int, S_IRUGO);
+module_param(queue_major, int, S_IRUGO);
+module_param(queue_minor, int, S_IRUGO);
+module_param(queue_nr_devs, int, S_IRUGO);
+module_param(queue_quantum, int, S_IRUGO);
+module_param(queue_qset, int, S_IRUGO);
 
 MODULE_AUTHOR("Alessandro Rubini, Jonathan Corbet");
 MODULE_LICENSE("Dual BSD/GPL");
@@ -44,7 +44,7 @@ struct message{
 };
 
 
-struct scull_dev {
+struct queue_dev {
     char **data;
     struct message* head;
     struct message* tail;
@@ -55,10 +55,10 @@ struct scull_dev {
     struct cdev cdev;
 };
 
-struct scull_dev *scull_devices;
+struct queue_dev *queue_devices;
 
 
-int scull_trim(struct scull_dev *dev)
+int queue_trim(struct queue_dev *dev)
 {
     int i;
 	
@@ -70,43 +70,43 @@ int scull_trim(struct scull_dev *dev)
         kfree(dev->data);
     }
     dev->data = NULL;
-    dev->quantum = scull_quantum;
-    dev->qset = scull_qset;
+    dev->quantum = queue_quantum;
+    dev->qset = queue_qset;
     dev->size = 0;
     return 0;
 }
 
 
-int scull_open(struct inode *inode, struct file *filp)
+int queue_open(struct inode *inode, struct file *filp)
 {
-    struct scull_dev *dev;
+    struct queue_dev *dev;
 
-    dev = container_of(inode->i_cdev, struct scull_dev, cdev);
+    dev = container_of(inode->i_cdev, struct queue_dev, cdev);
     filp->private_data = dev;
 
     /* trim the device if open was write-only */
     if ((filp->f_flags & O_ACCMODE) == O_WRONLY) {
         if (down_interruptible(&dev->sem))
             return -ERESTARTSYS;
-        scull_trim(dev);
+        queue_trim(dev);
         up(&dev->sem);
     }
     return 0;
 }
 
 
-int scull_release(struct inode *inode, struct file *filp)
+int queue_release(struct inode *inode, struct file *filp)
 {
 	
     return 0;
 }
 
 
-ssize_t scull_read(struct file *filp, char __user *buf, size_t count,
+ssize_t queue_read(struct file *filp, char __user *buf, size_t count,
                    loff_t *f_pos)
 {
-    struct scull_dev *dev = filp->private_data;
-    if(dev == scull_devices){
+    struct queue_dev *dev = filp->private_data;
+    if(dev == queue_devices){
 		return -EACCES;
 	}
     int quantum = dev->quantum;
@@ -189,13 +189,13 @@ ssize_t scull_read(struct file *filp, char __user *buf, size_t count,
 }
 
 
-ssize_t scull_write(struct file *filp, const char __user *buf, size_t count,
+ssize_t queue_write(struct file *filp, const char __user *buf, size_t count,
                     loff_t *f_pos)
 {
 	
 	int quantum,qset;
-    struct scull_dev *dev = filp->private_data;
-    if(dev == scull_devices){
+    struct queue_dev *dev = filp->private_data;
+    if(dev == queue_devices){
 		return -EACCES;
 	}
     char* temp = kmalloc(count*sizeof(char), GFP_KERNEL);
@@ -265,7 +265,7 @@ ssize_t scull_write(struct file *filp, const char __user *buf, size_t count,
     return retval;
 }
 
-long scull_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
+long queue_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
 	int i = 0;
 	int err = 0, tmp;
@@ -275,8 +275,8 @@ long scull_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	 * extract the type and number bitfields, and don't decode
 	 * wrong cmds: return ENOTTY (inappropriate ioctl) before access_ok()
 	 */
-	if (_IOC_TYPE(cmd) != SCULL_IOC_MAGIC) return -ENOTTY;
-	if (_IOC_NR(cmd) > SCULL_IOC_MAXNR) return -ENOTTY;
+	if (_IOC_TYPE(cmd) != QUEUE_IOC_MAGIC) return -ENOTTY;
+	if (_IOC_NR(cmd) > QUEUE_IOC_MAXNR) return -ENOTTY;
 
 	/*
 	 * the direction is a bitmask, and VERIFY_WRITE catches R/W
@@ -289,38 +289,56 @@ long scull_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	else if (_IOC_DIR(cmd) & _IOC_WRITE)
 		err =  !access_ok(VERIFY_READ, (void __user *)arg, _IOC_SIZE(cmd));
 	if (err) return -EFAULT;
-
+	struct queue_dev *dev = filp->private_data;
+	int len = 0;
 	switch(cmd) {
-	  case SCULL_IOCQPOP:
+	  case QUEUE_IOCQPOP:
 		
-		
-		for (i = 0 ; i < 3 ; ++i){
-			if(scull_devices+1+1){
-				if((scull_devices+1+i)->head){
-
-					struct scull_dev *dev = filp->private_data;
-					if(dev != scull_devices){ // only queue0 can have access to pop command 
-						return -EACCES;
+		if(dev != queue_devices){ // if its not the queue gets the ioctl command
+			if(dev){
+				if(dev->head){
+					struct message *tmpMsg= dev->head;
+					len = strlen(dev->head->text);
+					if (copy_to_user((char *)arg, dev->head->text, len)) {
+						retval = -EFAULT;
 					}
-					struct message *tmpMsg= (scull_devices+1+i)->head;
-					(scull_devices+1+i)->head = (scull_devices+1+i)->head->next;
-					if((scull_devices+1+i)->head)
-						(scull_devices+1+i)->head->prev =NULL;
+					dev->head = dev->head->next;
+					if(dev->head)
+						dev->head->prev =NULL;
 					tmpMsg->next = NULL;
-					//tmpMsg = NULL;
+					
 					kfree(tmpMsg->text);
 					kfree(tmpMsg);
-					//retval = tmpMsg->text;
-					printk("%s\n", tmpMsg->text);
-					
-					break;
 				}
 			}
-			
-			
+			else{
+				return -ENOENT; // if device is not found, no such file exists
+			}
 		}
-	  
-	  
+		else{
+			for (i = 0 ; i < 3 ; ++i){
+				if(queue_devices+1+1){
+					if((queue_devices+1+i)->head){
+
+						
+						if(dev != queue_devices){ // 
+							return -EACCES;
+						}
+						struct message *tmpMsg= (queue_devices+1+i)->head;
+						(queue_devices+1+i)->head = (queue_devices+1+i)->head->next;
+						if((queue_devices+1+i)->head)
+							(queue_devices+1+i)->head->prev =NULL;
+						tmpMsg->next = NULL;
+						//tmpMsg = NULL;
+						kfree(tmpMsg->text);
+						kfree(tmpMsg);
+						//retval = tmpMsg->text;
+						printk("%s\n", tmpMsg->text);
+						break;
+					}
+				}
+			}
+		}
 		break;
 
 	  default:  /* redundant, as cmd was checked against MAXNR */
@@ -330,9 +348,9 @@ long scull_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 }
 
 
-loff_t scull_llseek(struct file *filp, loff_t off, int whence)
+loff_t queue_llseek(struct file *filp, loff_t off, int whence)
 {
-    struct scull_dev *dev = filp->private_data;
+    struct queue_dev *dev = filp->private_data;
     loff_t newpos;
 
     switch(whence) {
@@ -358,27 +376,27 @@ loff_t scull_llseek(struct file *filp, loff_t off, int whence)
 }
 
 
-struct file_operations scull_fops = {
+struct file_operations queue_fops = {
     .owner =    THIS_MODULE,
-    .llseek =   scull_llseek,
-    .read =     scull_read,
-    .write =    scull_write,
-    .unlocked_ioctl =  scull_ioctl,
-    .open =     scull_open,
-    .release =  scull_release,
+    .llseek =   queue_llseek,
+    .read =     queue_read,
+    .write =    queue_write,
+    .unlocked_ioctl =  queue_ioctl,
+    .open =     queue_open,
+    .release =  queue_release,
 };
 
 
-void scull_cleanup_module(void)
+void queue_cleanup_module(void)
 {
 	
     int i;
-    dev_t devno = MKDEV(scull_major, scull_minor);
+    dev_t devno = MKDEV(queue_major, queue_minor);
 
-    if (scull_devices) {
-        for (i = 0; i < scull_nr_devs; i++) {
-            scull_trim(scull_devices + i);
-            struct scull_dev *dev = scull_devices+i;
+    if (queue_devices) {
+        for (i = 0; i < queue_nr_devs; i++) {
+            queue_trim(queue_devices + i);
+            struct queue_dev *dev = queue_devices+i;
 
     
 			while(dev->head){
@@ -391,64 +409,64 @@ void scull_cleanup_module(void)
 				kfree(tempmsg);
 				kfree(temp);
 			}
-            cdev_del(&scull_devices[i].cdev);
+            cdev_del(&queue_devices[i].cdev);
         }
-    kfree(scull_devices);
+    kfree(queue_devices);
     }
 	
-    unregister_chrdev_region(devno, scull_nr_devs);
+    unregister_chrdev_region(devno, queue_nr_devs);
 }
 
 
-int scull_init_module(void)
+int queue_init_module(void)
 {
     int result, i;
     int err;
     dev_t devno = 0;
-    struct scull_dev *dev;
+    struct queue_dev *dev;
 
-    if (scull_major) {
-        devno = MKDEV(scull_major, scull_minor);
-        result = register_chrdev_region(devno, scull_nr_devs, "scull");
+    if (queue_major) {
+        devno = MKDEV(queue_major, queue_minor);
+        result = register_chrdev_region(devno, queue_nr_devs, "queue");
     } else {
-        result = alloc_chrdev_region(&devno, scull_minor, scull_nr_devs,
-                                     "scull");
-        scull_major = MAJOR(devno);
+        result = alloc_chrdev_region(&devno, queue_minor, queue_nr_devs,
+                                     "queue");
+        queue_major = MAJOR(devno);
     }
     if (result < 0) {
-        printk(KERN_WARNING "scull: can't get major %d\n", scull_major);
+        printk(KERN_WARNING "queue: can't get major %d\n", queue_major);
         return result;
     }
 
-    scull_devices = kmalloc(scull_nr_devs * sizeof(struct scull_dev),
+    queue_devices = kmalloc(queue_nr_devs * sizeof(struct queue_dev),
                             GFP_KERNEL);
-    if (!scull_devices) {
+    if (!queue_devices) {
         result = -ENOMEM;
         goto fail;
     }
-    memset(scull_devices, 0, scull_nr_devs * sizeof(struct scull_dev));
+    memset(queue_devices, 0, queue_nr_devs * sizeof(struct queue_dev));
 
     /* Initialize each device. */
-    for (i = 0; i < scull_nr_devs; i++) {
-        dev = &scull_devices[i];
-        dev->quantum = scull_quantum;
-        dev->qset = scull_qset;
+    for (i = 0; i < queue_nr_devs; i++) {
+        dev = &queue_devices[i];
+        dev->quantum = queue_quantum;
+        dev->qset = queue_qset;
         sema_init(&dev->sem,1);
-        devno = MKDEV(scull_major, scull_minor + i);
-        cdev_init(&dev->cdev, &scull_fops);
+        devno = MKDEV(queue_major, queue_minor + i);
+        cdev_init(&dev->cdev, &queue_fops);
         dev->cdev.owner = THIS_MODULE;
-        dev->cdev.ops = &scull_fops;
+        dev->cdev.ops = &queue_fops;
         err = cdev_add(&dev->cdev, devno, 1);
         if (err)
-            printk(KERN_NOTICE "Error %d adding scull%d", err, i);
+            printk(KERN_NOTICE "Error %d adding queue%d", err, i);
     }
 
     return 0; /* succeed */
 
   fail:
-    scull_cleanup_module();
+    queue_cleanup_module();
     return result;
 }
 
-module_init(scull_init_module);
-module_exit(scull_cleanup_module);
+module_init(queue_init_module);
+module_exit(queue_cleanup_module);
