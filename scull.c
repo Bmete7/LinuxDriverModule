@@ -46,7 +46,7 @@ struct message{
 
 struct scull_dev {
     char **data;
-    struct message* msg;
+    struct message* head;
     struct message* tail;
     int quantum;
     int qset;
@@ -106,11 +106,14 @@ ssize_t scull_read(struct file *filp, char __user *buf, size_t count,
                    loff_t *f_pos)
 {
     struct scull_dev *dev = filp->private_data;
+    if(dev == scull_devices){
+		return -EACCES;
+	}
     int quantum = dev->quantum;
     int s_pos, q_pos;
     ssize_t retval = 0;
     
-	struct message *tmpMsg= dev->msg;
+	struct message *tmpMsg= dev->head;
 	//memset(tmpMsg, 0, sizeof(struct message));
 	
 	int wordLength = 0;
@@ -123,35 +126,34 @@ ssize_t scull_read(struct file *filp, char __user *buf, size_t count,
 		tmpMsg = tmpMsg->next;	
 	}
 	
-	char* temp = (char*) kmalloc((wordLength)*sizeof(char), GFP_KERNEL);
+	char* temp = (char*) kmalloc((wordLength+2)*sizeof(char), GFP_KERNEL);
 	
 
-	tmpMsg = dev->msg;
+	tmpMsg = dev->head;
 	wordLength  = 0;
 	while(tmpMsg){
 		int len= (strlen(tmpMsg->text));
 		wordLength += len;
-		if(tmpMsg == dev->msg){
+		if(tmpMsg == dev->head){
 			strcpy(temp,tmpMsg->text);
 		}
 		else{					
-			/*if(tmpMsg == dev->tail){
-				strcat(temp,tmpMsg->text);
-				break;
-			}*/
+
 			strcat(temp,tmpMsg->text);
 		}
 		tmpMsg = tmpMsg->next;	
 		printk("Final: %s\n", temp);
 	}
 //	strcat(temp,"\n\0");
-	printk("%d - %s ", wordLength, temp);
+	temp[wordLength] = '\n';
+	temp[wordLength+1] = '\0';
+	//printk("%d - %s ", wordLength, temp);
 	
 	
 	
     if (down_interruptible(&dev->sem))
         return -ERESTARTSYS;
-    if (copy_to_user(buf, temp, wordLength)) {
+    if (copy_to_user(buf, temp, wordLength+2)) {
         retval = -EFAULT;
         goto out;
     }
@@ -179,7 +181,7 @@ ssize_t scull_read(struct file *filp, char __user *buf, size_t count,
         goto out;
     }*/
     *f_pos += count;
-    retval = wordLength;// count idi degistir
+    retval = wordLength+2;// count idi degistir
 
   out:
     up(&dev->sem);
@@ -193,7 +195,9 @@ ssize_t scull_write(struct file *filp, const char __user *buf, size_t count,
 	
 	int quantum,qset;
     struct scull_dev *dev = filp->private_data;
-    
+    if(dev == scull_devices){
+		return -EACCES;
+	}
     char* temp = kmalloc(count*sizeof(char), GFP_KERNEL);
     memset(temp, 0, count*sizeof(char));
 	copy_from_user(temp,buf,count);
@@ -203,8 +207,8 @@ ssize_t scull_write(struct file *filp, const char __user *buf, size_t count,
 	tmpMsg->text = temp;
 	tmpMsg->next = NULL;
 	tmpMsg->prev = NULL;
-    if(!dev->msg){
-		dev->msg = tmpMsg;
+    if(!dev->head){
+		dev->head = tmpMsg;
 		dev->tail = tmpMsg;
 	}
 	else{
@@ -212,7 +216,7 @@ ssize_t scull_write(struct file *filp, const char __user *buf, size_t count,
 		dev->tail->next = tmpMsg;
 		dev->tail = tmpMsg;
 	}
-    printk("inside struct: %s\n", dev->msg->text);
+    printk("inside struct: %s\n", dev->head->text);
     
     quantum = dev->quantum;
     qset = dev->qset;
@@ -420,10 +424,10 @@ void scull_cleanup_module(void)
             struct scull_dev *dev = scull_devices+i;
 
     
-			while(dev->msg){
-				struct message* temp = dev->msg;
-				char*tempmsg = dev->msg->text;
-				dev->msg = dev->msg->next;
+			while(dev->head){
+				struct message* temp = dev->head;
+				char*tempmsg = dev->head->text;
+				dev->head = dev->head->next;
 				printk("Silinen: %s\n", tempmsg);
 				temp->next= NULL;
 				temp->prev = NULL;
