@@ -267,7 +267,7 @@ ssize_t scull_write(struct file *filp, const char __user *buf, size_t count,
 
 long scull_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
-
+	int i = 0;
 	int err = 0, tmp;
 	int retval = 0;
 
@@ -291,80 +291,34 @@ long scull_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	if (err) return -EFAULT;
 
 	switch(cmd) {
-	  case SCULL_IOCRESET:
-		scull_quantum = SCULL_QUANTUM;
-		scull_qset = SCULL_QSET;
+	  case SCULL_IOCQPOP:
+		
+		
+		for (i = 0 ; i < 3 ; ++i){
+			if(scull_devices+1+1){
+				if((scull_devices+1+i)->head){
+
+					struct scull_dev *dev = filp->private_data;
+					if(dev != scull_devices){ // only queue0 can have access to pop command 
+						return -EACCES;
+					}
+					struct message *tmpMsg= (scull_devices+1+i)->head;
+					(scull_devices+1+i)->head = (scull_devices+1+i)->head->next;
+					(scull_devices+1+i)->head->prev =NULL;
+					tmpMsg->next = NULL;
+					//retval = tmpMsg->text;
+					printk("%s\n", tmpMsg->text);
+					kfree(tmpMsg->text);
+					kfree(tmpMsg);
+					break;
+				}
+			}
+			
+			
+		}
+	  
+	  
 		break;
-
-	  case SCULL_IOCSQUANTUM: /* Set: arg points to the value */
-		if (! capable (CAP_SYS_ADMIN))
-			return -EPERM;
-		retval = __get_user(scull_quantum, (int __user *)arg);
-		break;
-
-	  case SCULL_IOCTQUANTUM: /* Tell: arg is the value */
-		if (! capable (CAP_SYS_ADMIN))
-			return -EPERM;
-		scull_quantum = arg;
-		break;
-
-	  case SCULL_IOCGQUANTUM: /* Get: arg is pointer to result */
-		retval = __put_user(scull_quantum, (int __user *)arg);
-		break;
-
-	  case SCULL_IOCQQUANTUM: /* Query: return it (it's positive) */
-		return scull_quantum;
-
-	  case SCULL_IOCXQUANTUM: /* eXchange: use arg as pointer */
-		if (! capable (CAP_SYS_ADMIN))
-			return -EPERM;
-		tmp = scull_quantum;
-		retval = __get_user(scull_quantum, (int __user *)arg);
-		if (retval == 0)
-			retval = __put_user(tmp, (int __user *)arg);
-		break;
-
-	  case SCULL_IOCHQUANTUM: /* sHift: like Tell + Query */
-		if (! capable (CAP_SYS_ADMIN))
-			return -EPERM;
-		tmp = scull_quantum;
-		scull_quantum = arg;
-		return tmp;
-
-	  case SCULL_IOCSQSET:
-		if (! capable (CAP_SYS_ADMIN))
-			return -EPERM;
-		retval = __get_user(scull_qset, (int __user *)arg);
-		break;
-
-	  case SCULL_IOCTQSET:
-		if (! capable (CAP_SYS_ADMIN))
-			return -EPERM;
-		scull_qset = arg;
-		break;
-
-	  case SCULL_IOCGQSET:
-		retval = __put_user(scull_qset, (int __user *)arg);
-		break;
-
-	  case SCULL_IOCQQSET:
-		return scull_qset;
-
-	  case SCULL_IOCXQSET:
-		if (! capable (CAP_SYS_ADMIN))
-			return -EPERM;
-		tmp = scull_qset;
-		retval = __get_user(scull_qset, (int __user *)arg);
-		if (retval == 0)
-			retval = put_user(tmp, (int __user *)arg);
-		break;
-
-	  case SCULL_IOCHQSET:
-		if (! capable (CAP_SYS_ADMIN))
-			return -EPERM;
-		tmp = scull_qset;
-		scull_qset = arg;
-		return tmp;
 
 	  default:  /* redundant, as cmd was checked against MAXNR */
 		return -ENOTTY;
