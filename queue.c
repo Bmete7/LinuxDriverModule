@@ -317,7 +317,7 @@ long queue_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		}
 		else{
 			for (i = 0 ; i < 3 ; ++i){
-				if(queue_devices+1+1){
+				if(queue_devices+1+i){
 					if((queue_devices+1+i)->head){
 
 						
@@ -325,10 +325,15 @@ long queue_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 							return -EACCES;
 						}
 						struct message *tmpMsg= (queue_devices+1+i)->head;
+						len = strlen(tmpMsg->text);
+						if (copy_to_user((char *)arg, tmpMsg->text, len)) {
+							retval = -EFAULT;
+						}
 						(queue_devices+1+i)->head = (queue_devices+1+i)->head->next;
 						if((queue_devices+1+i)->head)
 							(queue_devices+1+i)->head->prev =NULL;
 						tmpMsg->next = NULL;
+						
 						//tmpMsg = NULL;
 						kfree(tmpMsg->text);
 						kfree(tmpMsg);
